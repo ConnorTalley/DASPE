@@ -50,6 +50,7 @@ class Sensor:
         self.data = []
 
 class State:
+	
     def __init__(self, device, name):
         self.device = device
         self.samples = 0
@@ -113,6 +114,20 @@ class State:
         except can.CanError as e:
             print(f"Failed to send CAN message: {e}")
 
+    def send_servo_position_command(bus, motor_id, position_deg):
+    	CONTROL_MODE_POSITION = 4
+    	can_id = (CONTROL_MODE_POSITION << 8) | motor_id
+    	position_int = float_to_int32_position(position_deg)
+    	data = position_int.to_bytes(4, byteorder='big', signed=True)
+
+    	msg = can.Message(arbitration_id=can_id, data=data, is_extended_id=True)
+    	try:
+        	bus.send(msg)
+        	print(f"Sent position: {position_deg}°, ID: {hex(can_id)}, data: {data.hex()}")
+    	except can.CanError as e:
+        	print(f"CAN send error: {e}")
+
+	
     def acc_data_handler(self, ctx, data):
         acc_data = parse_value(data)
         self.samples += 1
@@ -188,6 +203,20 @@ def send_mit_control(bus, controller_id, position, velocity, kp, kd, torque):
             print(f"Failed to send CAN message: {e}")
 
 # Connects to the sensors and start data aquisition
+
+def send_servo_position_command(bus, motor_id, position_deg):
+    CONTROL_MODE_POSITION = 4
+    can_id = (CONTROL_MODE_POSITION << 8) | motor_id
+    position_int = float_to_int32_position(position_deg)
+    data = position_int.to_bytes(4, byteorder='big', signed=True)
+
+    msg = can.Message(arbitration_id=can_id, data=data, is_extended_id=True)
+    try:
+        bus.send(msg)
+        print(f"Sent position: {position_deg}°, ID: {hex(can_id)}, data: {data.hex()}")
+    except can.CanError as e:
+        print(f"CAN send error: {e}")
+
 
 def float_to_uint(value, value_min, value_max, bits):
         """
@@ -336,17 +365,43 @@ def setzero(bus, controller_id):
     except can.CanError as e:
         print(f"Failed to send CAN message: {e}")
 
-def main():
-    initialize(bus, 1)
-    time.sleep(1)
-    initialize(bus, 2)
-    time.sleep(1)
+def set_servo_origin(bus, motor_id, origin_mode=1):
+    """
+    Sets the origin (current position = 0) for the CubeMars motor in Servo Mode.
 
-    send_mit_control(bus, 1, 0.00, 0.00, 0.00, 0.00, 0.00)
+    Args:
+        bus: CAN bus interface
+        motor_id: Motor CAN ID
+        origin_mode: 0 = temporary, 1 = permanent (default), 2 = restore default
+    """
+    CONTROL_MODE_ORIGIN = 5
+    can_id = (CONTROL_MODE_ORIGIN << 8) | motor_id
+    data = bytearray([origin_mode])  # only one byte required
+
+    msg = can.Message(arbitration_id=can_id, data=data, is_extended_id=True)
+    try:
+        bus.send(msg)
+        print(f"Sent origin set command (mode {origin_mode}) to motor {motor_id}")
+    except can.CanError as e:
+        print(f"CAN send error: {e}")
+
+
+def main():
+    #initialize(bus, 1)
+    #time.sleep(1)
+    #initialize(bus, 2)
+    #time.sleep(1)
+
+    #send_mit_control(bus, 1, 0.00, 0.00, 0.00, 0.00, 0.00)
+    #time.sleep(1)
+    #send_mit_control(bus, 2, 0.00, 0.00, 0.00, 0.00, 0.00)
+    #time.sleep(1)
+
+    send_servo_position_control(bus, 1, 0)
     time.sleep(1)
-    send_mit_control(bus, 2, 0.00, 0.00, 0.00, 0.00, 0.00)
+    send_servo_position_control(bus, 2, 0)
     time.sleep(1)
-    
+	
     SetServo(0)
     
     #states = []
@@ -369,9 +424,9 @@ def main():
     
     init_angl_zero()
     
-    setzero(bus, 1)
+    set_servo_origin(bus, 1)
     time.sleep(1)
-    setzero(bus, 2)
+    set_servo_origin(bus, 2)
     time.sleep(.01)
     
     print("Press 'q' to stop streaming and disconnect sensors")
@@ -448,9 +503,9 @@ def main():
         
         # Set Motor Angles
         SetServo(elbowAngle)
-        send_mit_control(bus, 2, mtr2angl, 0, kp, kd, 0)
+        send_servo_position_control(bus, 2, mtr2angl)
         time.sleep(.01)
-        send_mit_control(bus, 1, -(mtr1angl - modrad), 0, kp, kd, 0)
+        send_servo_position_control(bus, 1, -(mtr1angl - modrad))
         time.sleep(.01)
         
         # Send Wireless Data To Matlab
@@ -475,9 +530,9 @@ def main():
         stop_and_disconnect(state)
         
     time.sleep(1)
-    send_mit_control(bus, 1, 0.00, 0.00, 0.00, 0.00, 0.00)
+    send_servo_position_control(bus, 1, 0.00)
     time.sleep(1)
-    send_mit_control(bus, 2, 0.00, 0.00, 0.00, 0.00, 0.00)
+    send_servo_position_control(bus, 2, 0.00)
     time.sleep(1)
     Exit(bus, 1)
     time.sleep(1)
