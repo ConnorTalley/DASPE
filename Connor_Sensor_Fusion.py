@@ -116,7 +116,7 @@ class State:
 
     def send_servo_position_command(bus, motor_id, position_deg):
     	CONTROL_MODE_POSITION = 4
-    	can_id = (CONTROL_MODE_POSITION << 8) | motor_id
+    	can_id = (motor_id | int(CONTROL_MODE_POSITION) << 8)
     	position_int = int(position_deg * 1000000)
     	data = position_int.to_bytes(4, byteorder='big', signed=True)
 
@@ -206,7 +206,7 @@ def send_mit_control(bus, controller_id, position, velocity, kp, kd, torque):
 
 def send_servo_position_command(bus, motor_id, position_deg):
     CONTROL_MODE_POSITION = 4
-    can_id = (CONTROL_MODE_POSITION << 8) | motor_id
+    can_id = (motor_id | int(CONTROL_MODE_POSITION) << 8)
     position_int = int(position_deg * 1000000)
     data = position_int.to_bytes(4, byteorder='big', signed=True)
 
@@ -375,7 +375,7 @@ def set_servo_origin(bus, motor_id, origin_mode=1):
         origin_mode: 0 = temporary, 1 = permanent (default), 2 = restore default
     """
     CONTROL_MODE_ORIGIN = 5
-    can_id = (CONTROL_MODE_ORIGIN << 8) | motor_id
+    can_id = (motor_id | int(CONTROL_MODE_ORIGIN) << 8)
     data = bytearray([origin_mode])  # only one byte required
 
     msg = can.Message(arbitration_id=can_id, data=data, is_extended_id=True)
