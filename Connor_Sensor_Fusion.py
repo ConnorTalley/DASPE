@@ -117,7 +117,7 @@ class State:
     def send_servo_position_command(bus, motor_id, position_deg):
     	CONTROL_MODE_POSITION = 4
     	can_id = (CONTROL_MODE_POSITION << 8) | motor_id
-    	position_int = float_to_int32_position(position_deg)
+    	position_int = int(position_deg * 1000000)
     	data = position_int.to_bytes(4, byteorder='big', signed=True)
 
     	msg = can.Message(arbitration_id=can_id, data=data, is_extended_id=True)
@@ -207,7 +207,7 @@ def send_mit_control(bus, controller_id, position, velocity, kp, kd, torque):
 def send_servo_position_command(bus, motor_id, position_deg):
     CONTROL_MODE_POSITION = 4
     can_id = (CONTROL_MODE_POSITION << 8) | motor_id
-    position_int = float_to_int32_position(position_deg)
+    position_int = int(position_deg * 1000000)
     data = position_int.to_bytes(4, byteorder='big', signed=True)
 
     msg = can.Message(arbitration_id=can_id, data=data, is_extended_id=True)
@@ -397,9 +397,9 @@ def main():
     #send_mit_control(bus, 2, 0.00, 0.00, 0.00, 0.00, 0.00)
     #time.sleep(1)
 
-    send_servo_position_control(bus, 1, 0)
+    send_servo_position_command(bus, 1, 0)
     time.sleep(1)
-    send_servo_position_control(bus, 2, 0)
+    send_servo_position_command(bus, 2, 0)
     time.sleep(1)
 	
     SetServo(0)
@@ -503,9 +503,9 @@ def main():
         
         # Set Motor Angles
         SetServo(elbowAngle)
-        send_servo_position_control(bus, 2, mtr2angl)
+        send_servo_position_command(bus, 2, mtr2angl)
         time.sleep(.01)
-        send_servo_position_control(bus, 1, -(mtr1angl - modrad))
+        send_servo_position_command(bus, 1, -(mtr1angl - modrad))
         time.sleep(.01)
         
         # Send Wireless Data To Matlab
@@ -530,9 +530,9 @@ def main():
         stop_and_disconnect(state)
         
     time.sleep(1)
-    send_servo_position_control(bus, 1, 0.00)
+    send_servo_position_command(bus, 1, 0.00)
     time.sleep(1)
-    send_servo_position_control(bus, 2, 0.00)
+    send_servo_position_command(bus, 2, 0.00)
     time.sleep(1)
     Exit(bus, 1)
     time.sleep(1)
