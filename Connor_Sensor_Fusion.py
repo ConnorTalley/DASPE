@@ -11,6 +11,7 @@ import threading
 import time
 import math
 from adafruit_servokit import ServoKit
+import os
 
 kit = ServoKit(channels = 16)
 
@@ -117,7 +118,7 @@ class State:
     def send_servo_position_command(bus, motor_id, position_deg):
     	CONTROL_MODE_POSITION = 4
     	can_id = (motor_id | int(CONTROL_MODE_POSITION) << 8)
-    	position_int = int(position_deg * 1000000)
+    	position_int = int(position_deg * 100000)
     	data = position_int.to_bytes(4, byteorder='big', signed=True)
 
     	msg = can.Message(arbitration_id=can_id, data=data, is_extended_id=True)
@@ -207,7 +208,7 @@ def send_mit_control(bus, controller_id, position, velocity, kp, kd, torque):
 def send_servo_position_command(bus, motor_id, position_deg):
     CONTROL_MODE_POSITION = 4
     can_id = (motor_id | int(CONTROL_MODE_POSITION) << 8)
-    position_int = int(position_deg * 1000000)
+    position_int = int(position_deg * 10000)
     data = position_int.to_bytes(4, byteorder='big', signed=True)
 
     msg = can.Message(arbitration_id=can_id, data=data, is_extended_id=True)
@@ -503,9 +504,9 @@ def main():
         
         # Set Motor Angles
         SetServo(elbowAngle)
-        send_servo_position_command(bus, 2, mtr2angl)
+        send_servo_position_command(bus, 2, mtr2angl * 180 / math.pi)
         time.sleep(.01)
-        send_servo_position_command(bus, 1, -(mtr1angl - modrad))
+        send_servo_position_command(bus, 1, -(mtr1angl * 180 / math.pi))
         time.sleep(.01)
         
         # Send Wireless Data To Matlab
