@@ -373,6 +373,7 @@ def set_servo_origin(bus, motor_id, origin_mode=1):
     Args:
         bus: CAN bus interface
         motor_id: Motor CAN ID
+    initroll = state.initroll
         origin_mode: 0 = temporary, 1 = permanent (default), 2 = restore default
     """
     CONTROL_MODE_ORIGIN = 5
@@ -398,10 +399,10 @@ def main():
     #send_mit_control(bus, 2, 0.00, 0.00, 0.00, 0.00, 0.00)
     #time.sleep(1)
 
-    send_servo_position_command(bus, 1, 0)
-    time.sleep(1)
-    send_servo_position_command(bus, 2, 0)
-    time.sleep(1)
+    #send_servo_position_command(bus, 1, 0)
+    #time.sleep(1)
+    #send_servo_position_command(bus, 2, 0)
+    #time.sleep(1)
 	
     SetServo(0)
     
@@ -471,8 +472,8 @@ def main():
         we, xe, ye, ze = exoUpper.dataw, exoUpper.datax, exoUpper.datay, exoUpper.dataz
         norm = math.sqrt(we**2 + xe**2 + ye**2 + ze**2)
         we, xe, ye, ze = we / norm, xe / norm, ye / norm, ze / norm
-        mtr2anglexo = math.asin(2.0 * (we * ye - ze * xe))
-        mtr2anglexo = pitch_filter(exoUpper, mtr2anglexo)
+        mtr2anglexo = math.atan2(2.0 * (we * ze + xe * ye), 1.0 - 2.0 * (ye**2 + ze**2))
+        mtr2anglexo = yaw_filter(exoUpper, mtr2anglexo)
         
         mtr1anglexo = math.atan2(2.0 * (we * xe + ye * ze), 1.0 - 2.0 * (xe**2 + ye**2))
         mtr1anglexo = roll_filter(exoUpper, mtr1anglexo)
@@ -503,10 +504,10 @@ def main():
         print(f"lower yaw exo = {lowerYawexo}")
         
         # Set Motor Angles
-        SetServo(elbowAngle)
-        send_servo_position_command(bus, 2, mtr2angl * 180 / math.pi)
+        SetServo(-elbowAngle)
+        send_servo_position_command(bus, 1, -(mtr2angl * 180 / math.pi))
         time.sleep(.01)
-        send_servo_position_command(bus, 1, -(mtr1angl * 180 / math.pi))
+        send_servo_position_command(bus, 2, -(mtr1angl * 180 / math.pi))
         time.sleep(.01)
         
         # Send Wireless Data To Matlab
