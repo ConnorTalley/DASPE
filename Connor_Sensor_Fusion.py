@@ -472,8 +472,8 @@ def main():
         we, xe, ye, ze = exoUpper.dataw, exoUpper.datax, exoUpper.datay, exoUpper.dataz
         norm = math.sqrt(we**2 + xe**2 + ye**2 + ze**2)
         we, xe, ye, ze = we / norm, xe / norm, ye / norm, ze / norm
-        mtr2anglexo = math.atan2(2.0 * (we * ze + xe * ye), 1.0 - 2.0 * (ye**2 + ze**2))
-        mtr2anglexo = yaw_filter(exoUpper, mtr2anglexo)
+        mtr2anglexo = math.asin(2.0 * (we * ye - ze * xe))
+        mtr2anglexo = pitch_filter(exoUpper, mtr2anglexo)
         
         mtr1anglexo = math.atan2(2.0 * (we * xe + ye * ze), 1.0 - 2.0 * (xe**2 + ye**2))
         mtr1anglexo = roll_filter(exoUpper, mtr1anglexo)
@@ -498,7 +498,7 @@ def main():
         
         print(f"motor 1 angle = {mtr1angl}")
         print(f"motor 2 angle = {mtr2angl}")
-        print(f"lower yaw = {lowerYaw}")
+        print(f"lower yaw = {elbowAngle}")
         print(f"motor 1 angle exo = {mtr1anglexo}")
         print(f"motor 2 angle exo = {mtr2anglexo}")
         print(f"lower yaw exo = {lowerYawexo}")
