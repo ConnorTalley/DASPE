@@ -38,8 +38,8 @@ moddeg = 10
 
 
 # Socket IP Address & Port
-IP_Address = "10.101.182.93"
-IP_Port = 8008
+IP_Address = "10.101.191.37"
+IP_Port = 12345
 
 
 # Define sensor classes
@@ -160,6 +160,7 @@ sensors = [
 states = []
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
 
 
 
@@ -208,6 +209,7 @@ def send_mit_control(bus, controller_id, position, velocity, kp, kd, torque):
 def send_servo_position_command(bus, motor_id, position_deg):
     CONTROL_MODE_POSITION = 4
     can_id = (motor_id | int(CONTROL_MODE_POSITION) << 8)
+    position_deg = round(position_deg, 1)
     position_int = int(position_deg * 10000)
     data = position_int.to_bytes(4, byteorder='big', signed=True)
 
@@ -337,15 +339,15 @@ def roll_filter(state, roll):
     return roll
     
 def SetServo(angle):
-    if angle > 120:
-        angle = 120
-    elif angle < -10:
-        angle = -10
-    else:
-        angle = angle
+    # if angle > 120:
+        # angle = 120
+    # elif angle < -10:
+        # angle = -10
+    # else:
+        # angle = angle
         
-    angle = angle + 10
-    kit.servo[0].angle = angle
+    # angle = angle + 10
+    kit.servo[0].angle = angle + 90
     
 def setzero(bus, controller_id):
     can_id = controller_id
@@ -472,8 +474,8 @@ def main():
         we, xe, ye, ze = exoUpper.dataw, exoUpper.datax, exoUpper.datay, exoUpper.dataz
         norm = math.sqrt(we**2 + xe**2 + ye**2 + ze**2)
         we, xe, ye, ze = we / norm, xe / norm, ye / norm, ze / norm
-        mtr2anglexo = math.atan2(2.0 * (we * ze + xe * ye), 1.0 - 2.0 * (ye**2 + ze**2))
-        mtr2anglexo = yaw_filter(exoUpper, mtr2anglexo)
+        mtr2anglexo = math.asin(2.0 * (we * ye - ze * xe))
+        mtr2anglexo = pitch_filter(exoUpper, mtr2anglexo)
         
         mtr1anglexo = math.atan2(2.0 * (we * xe + ye * ze), 1.0 - 2.0 * (xe**2 + ye**2))
         mtr1anglexo = roll_filter(exoUpper, mtr1anglexo)
@@ -498,17 +500,18 @@ def main():
         
         print(f"motor 1 angle = {mtr1angl}")
         print(f"motor 2 angle = {mtr2angl}")
-        print(f"lower yaw = {lowerYaw}")
+        print(f"lower yaw = {elbowAngle}")
         print(f"motor 1 angle exo = {mtr1anglexo}")
         print(f"motor 2 angle exo = {mtr2anglexo}")
         print(f"lower yaw exo = {lowerYawexo}")
         
         # Set Motor Angles
-        SetServo(-elbowAngle)
-        send_servo_position_command(bus, 1, -(mtr2angl * 180 / math.pi))
-        time.sleep(.01)
-        send_servo_position_command(bus, 2, -(mtr1angl * 180 / math.pi))
-        time.sleep(.01)
+        SetServo(elbowAngle)
+        time.sleep(.02)
+        send_servo_position_command(bus, 1, (mtr2angl * 180 / math.pi))
+        time.sleep(.02)
+        send_servo_position_command(bus, 2, (mtr1angl * 180 / math.pi))
+        time.sleep(.02)
         
         # Send Wireless Data To Matlab
         message = f"{'Healthy Lower Arm'} -> Quaternion: {[lowerYaw, lowerRoll]} / ".encode('utf-8')
