@@ -18,6 +18,19 @@ import datetime
 import pandas as pd
 import joblib
 import numpy as np
+from stable_baselines3 import DDPG
+from stable_baselines3.common.env_util import make_vec_env
+import gym
+
+# Dummy state space and action space
+class DummyEnv:
+    def __init__(self):
+        self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
+        self.action_space = gym.spaces.Box(low=-0.1, high=0.1, shape=(3,), dtype=np.float32)
+env = DummyEnv()
+
+
+model = DDPG.load("ddpg_pid_model_untrained.zip")
 
 kit = ServoKit(channels = 16)
 
@@ -38,7 +51,11 @@ adr_motor2 = 2
 td = 0.000001
 decay = 0.99
 
-
+GAIN_FILE = "pid_gains.pkl"
+if os.path.exists(GAIN_FILE):
+    gains = joblib.load(GAIN_FILE)
+else:
+    gains = {"Kp": 1.25, "Ki": 1.0, "Kd": 0.05}
 
 # Fuck Around And Find Out
 kp = 80
@@ -221,7 +238,7 @@ states = []
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
 
-pid = PIDController(Kp=1.25, Ki=1, Kd=0.05, dt=.18, output_limits=(-90,90))  # Adjust gains as needed
+pid = PIDController(Kp=gains["Kp"], Ki=gains["Ki"], Kd=gains["Kd"], dt=.18, output_limits=(-90,90))  # Adjust gains as needed
 
 
 def get_and_increment_trial_number():
@@ -529,6 +546,10 @@ def main():
     time.sleep(.01)
     sensor_data_log = []
     log_data = []
+	desired_buffer = []
+	actual_buffer = []
+	N = 50
+	step_counter = 0
     print("Press 'q' to stop streaming and disconnect sensors")
 
     while True:
@@ -598,7 +619,35 @@ def main():
         
         correction, derivative = pid.compute(desired_position, actual_position)
         SetServo(correction + actual_position)
-         
+        if step_counter > 0 and step_counter % N == 0:
+        	# Calculate reward
+        	error = np.array(desired_buffer) - np.array(actual_buffer)
+        	rms_error = np.sqrt(np.mean(error**2))
+        	overshoot = max(0, np.max(actual_buffer) - np.max(desired_buffer))
+        	reward = -rms_error - 5 * overshoot
+
+        	# Build state vector
+        	state = np.array(
+            	desired_buffer + actual_buffer + [pid.Kp, pid.Ki, pid.Kd],
+            	dtype=np.float32
+        	).reshape(1, -1)
+
+        	# Train DDPG model with pseudo experience
+        	action, _ = model.predict(state, deterministic=False)
+        	model.replay_buffer.add(state, action, [reward], state, [1.0])
+        	model.train(batch_size=1, gradient_steps=1)
+
+        	# Apply bounded delta gains
+        	delta_kp = float(np.clip(action[0][0], -0.05, 0.05))
+        	delta_ki = float(np.clip(action[0][1], -0.005, 0.005))
+        	delta_kd = float(np.clip(action[0][2], -0.0005, 0.0005))
+        	pid.Kp = float(np.clip(pid.Kp + delta_kp, 0.0, 10.0))
+        	pid.Ki = float(np.clip(pid.Ki + delta_ki, 0.0, 2.0))
+        	pid.Kd = float(np.clip(pid.Kd + delta_kd, 0.0, 1.0))
+
+        	# Clear buffers for next cycle
+        	desired_buffer.clear()
+        	actual_buffer.clear()
         
         #print(mtr2angl*(180/3.14))
         
@@ -666,9 +715,10 @@ def main():
             break
         sleep(td)
         end_time = time.time()
-        excecution_time = end_time - start_time
+        execution_time = end_time - start_time
         print(f"end time is {end_time}")
-        print(f"excecution time is {excecution_time} seconds")
+        print(f"execution time is {execution_time} seconds")
+	    step_counter += 1
 
     for state in states:
         stop_and_disconnect(state)
@@ -700,6 +750,9 @@ def main():
     df = pd.DataFrame(log_data)
     filename = f"system_data_Trial_{trial_number}.csv"
     df.to_csv(filename, index=False)
+
+	joblib.dump({"Kp": pid.Kp, "Ki": pid.Ki, "Kd": pid.Kd}, GAIN_FILE)
+	model.save("ddpg_pid_model_untrained")
 	
     print(f"Trial saved as: {date_str}_Trial_{trial_number}.xlsx")
     plt.ioff()
