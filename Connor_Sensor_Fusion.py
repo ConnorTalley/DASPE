@@ -11,6 +11,7 @@ import threading
 import time
 import math
 from adafruit_servokit import ServoKit
+import matplotlib.pyplot as plt
 import os
 
 kit = ServoKit(channels = 16)
@@ -29,6 +30,8 @@ controller_id = 2
 adr_motor1 = 1
 adr_motor2 = 2
 
+td = 0.000001
+
 
 
 # Fuck Around And Find Out
@@ -38,11 +41,60 @@ moddeg = 10
 
 
 # Socket IP Address & Port
-IP_Address = "10.101.191.37"
+IP_Address = "10.101.172.68"
 IP_Port = 12345
 
+plt.ion()
+fig, ax = plt.subplots()
+line1, = ax.plot([], [], label='Actual Position', color='blue')
+line2, = ax.plot([], [], label='Desired Position', color='orange')
+ax.set_xlabel("Time Step")
+ax.set_ylabel("Angle(Degrees)")
+ax.set_title("Real-Time Position")
+ax.legend()
+ax.grid(True)
+
+x_data = []
+actual_data = []
+desired_data = []
 
 # Define sensor classes
+
+class PIDController:
+    def __init__(self, Kp, Ki, Kd, dt, output_limits=(None, None)):
+        self.Kp = Kp
+        self.Ki = Ki
+        self.Kd = Kd
+        self.dt = dt  # Time step
+
+        self.integral = 0
+        self.prev_error = 0
+        self.output_limits = output_limits  # (min_output, max_output)
+
+    def reset(self):
+        self.integral = 0
+        self.prev_error = 0
+
+    def compute(self, setpoint, actual_position):
+        error = setpoint - actual_position
+        self.integral += error * self.dt
+        derivative = (error - self.prev_error) / self.dt
+
+        output = (
+            self.Kp * error +
+            self.Ki * self.integral +
+            self.Kd * derivative
+        )
+
+        # Optional output clamping
+        min_out, max_out = self.output_limits
+        if min_out is not None:
+            output = max(min_out, output)
+        if max_out is not None:
+            output = min(max_out, output)
+
+        self.prev_error = error
+        return output
 
 class Sensor:
     def __init__(self, name, mac):
@@ -161,6 +213,8 @@ states = []
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+
+pid = PIDController(Kp=1.25, Ki=1, Kd=0.05, dt=0.1, output_limits=(-90,90))  # Adjust gains as needed
 
 
 
@@ -339,12 +393,12 @@ def roll_filter(state, roll):
     return roll
     
 def SetServo(angle):
-    # if angle > 120:
-        # angle = 120
-    # elif angle < -10:
-        # angle = -10
-    # else:
-        # angle = angle
+    if angle > 10:
+        angle = 10
+    elif angle < -90:
+        angle = -90
+    else:
+        angle = angle
         
     # angle = angle + 10
     kit.servo[0].angle = angle + 90
@@ -401,7 +455,7 @@ def main():
     #send_mit_control(bus, 2, 0.00, 0.00, 0.00, 0.00, 0.00)
     #time.sleep(1)
 
-    #send_servo_position_command(bus, 1, 0)
+    #send_servo_position_command(bus, 1, 0) -62.955710956268064
     #time.sleep(1)
     #send_servo_position_command(bus, 2, 0)
     #time.sleep(1)
@@ -494,24 +548,30 @@ def main():
         diff2 = (mtr2angl - mtr2anglexo)
         
         modrad = (moddeg/180) * math.pi
+        
+        desired_position = elbowAngle
+        actual_position = (-mtr2anglexo + lowerYawexo) * (180/math.pi)
+        
+        correction = pid.compute(desired_position, actual_position)
+        SetServo(correction + actual_position)
          
         
         #print(mtr2angl*(180/3.14))
         
         print(f"motor 1 angle = {mtr1angl}")
         print(f"motor 2 angle = {mtr2angl}")
-        print(f"lower yaw = {elbowAngle}")
+        print(f"lower yaw = {desired_position}")
         print(f"motor 1 angle exo = {mtr1anglexo}")
         print(f"motor 2 angle exo = {mtr2anglexo}")
-        print(f"lower yaw exo = {lowerYawexo}")
+        print(f"lower yaw exo = {actual_position}")
         
         # Set Motor Angles
-        SetServo(elbowAngle)
-        time.sleep(.02)
-        send_servo_position_command(bus, 1, (mtr2angl * 180 / math.pi))
-        time.sleep(.02)
-        send_servo_position_command(bus, 2, (mtr1angl * 180 / math.pi))
-        time.sleep(.02)
+        #SetServo(elbowAngle)
+        time.sleep(td)
+        send_servo_position_command(bus, 1, (mtr2angl * 180 / math.pi) * 2.8)
+        time.sleep(td)
+        send_servo_position_command(bus, 2, (mtr1angl * 180 / math.pi) * 1.745)
+        time.sleep(td)
         
         # Send Wireless Data To Matlab
         message = f"{'Healthy Lower Arm'} -> Quaternion: {[lowerYaw, lowerRoll]} / ".encode('utf-8')
@@ -523,13 +583,26 @@ def main():
         message = f"{'Exo Upper Arm'} -> Quaternion: {[mtr2anglexo, mtr1anglexo]} / ".encode('utf-8')
         sock.sendto(message, (IP_Address, IP_Port))
         
+        x_data.append(len(x_data))
+        actual_data.append(-actual_position)
+        desired_data.append(-desired_position)
+        
+        line1.set_data(x_data, actual_data)
+        line2.set_data(x_data, desired_data)
+        
+        ax.relim()
+        ax.autoscale_view()
+        
+        plt.draw()
+        plt.pause(td)
+        
         
         
         if keyboard.is_pressed('q'):
             print('Stopping streaming and disconnecting sensors')
             #print(upperArm.data)
             break
-        sleep(0.01)
+        sleep(td)
 
     for state in states:
         stop_and_disconnect(state)
@@ -546,6 +619,8 @@ def main():
     SetServo(0)
     
     sock.close()
+    plt.ioff()
+    plt.show()
 
 if __name__ == "__main__":
     main()
