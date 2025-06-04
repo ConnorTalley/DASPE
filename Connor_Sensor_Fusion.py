@@ -75,7 +75,6 @@ class PIDController:
 
         self.integral = 0.00
         self.prev_error = 0.00
-        self.decay = 0.99
         self.output_limits = output_limits  # (min_output, max_output)
 
     def reset(self):
@@ -84,7 +83,7 @@ class PIDController:
 
     def compute(self, setpoint, actual_position):
         error = setpoint - actual_position
-        self.integral = self.integral * self.decay
+        self.integral *= decay
         self.integral += error * self.dt
         derivative = (error - self.prev_error) / self.dt
 
@@ -222,7 +221,7 @@ states = []
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
 
-pid = PIDController(Kp=1.25, Ki=1, Kd=0.05, dt=td*5, output_limits=(-90,90))  # Adjust gains as needed
+pid = PIDController(Kp=1.25, Ki=1, Kd=0.05, dt=.18, output_limits=(-90,90))  # Adjust gains as needed
 
 
 def get_and_increment_trial_number():
@@ -255,9 +254,9 @@ def load_integral():
         return 0.0
 
 def save_sensor_data_log(log_data, date_str, trial_number):
-    df = pd.DataFrame(log_data)
+    dfi = pd.DataFrame(log_data)
     filename = f"{date_str}_Trial_{trial_number}.xlsx"
-    df.to_excel(filename, index=False)
+    dfi.to_excel(filename, index=False)
 
 def send_mit_control(bus, controller_id, position, velocity, kp, kd, torque):
         """
@@ -502,7 +501,7 @@ def main():
     #time.sleep(1)
 	
     SetServo(0)
-    pid.integral = load_integral
+    pid.integral = load_integral()
     
     #states = []
     
@@ -535,7 +534,9 @@ def main():
     while True:
         if len(sensors) != len(states):
             break
-        print(time.time())    
+        
+        start_time = time.time()
+        print(f"start time is {start_time}")    
         # Import Current Data
         upperArm = states[1]
         lowerArm = states[0]         
@@ -654,9 +655,9 @@ def main():
     	    "error": error,
             "derivative": derivative,
             "integral": pid.integral,
-            "Kp": pid.kp,
-            "Ki": pid.ki,
-            "Kd": pid.kd
+            "Kp": pid.Kp,
+            "Ki": pid.Ki,
+            "Kd": pid.Kd
         })
         
         if keyboard.is_pressed('q'):
@@ -664,7 +665,10 @@ def main():
             #print(upperArm.data)
             break
         sleep(td)
-        print(time.time())
+        end_time = time.time()
+        excecution_time = end_time - start_time
+        print(f"end time is {end_time}")
+        print(f"excecution time is {excecution_time} seconds")
 
     for state in states:
         stop_and_disconnect(state)
@@ -683,8 +687,6 @@ def main():
     sock.close()
 
     print("Saving integral and data...")
-
-    df = pd.DataFrame(log_data)
 	
     # Save PID integral
     save_integral(pid.integral)
@@ -694,6 +696,8 @@ def main():
 
     # Save sensor readings
     save_sensor_data_log(sensor_data_log, date_str, trial_number)
+    
+    df = pd.DataFrame(log_data)
     filename = f"system_data_Trial_{trial_number}.csv"
     df.to_csv(filename, index=False)
 	
