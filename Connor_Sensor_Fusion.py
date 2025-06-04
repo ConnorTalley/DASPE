@@ -13,6 +13,11 @@ import math
 from adafruit_servokit import ServoKit
 import matplotlib.pyplot as plt
 import os
+import json
+import datetime
+import pandas as pd
+import joblib
+import numpy as np
 
 kit = ServoKit(channels = 16)
 
@@ -31,6 +36,7 @@ adr_motor1 = 1
 adr_motor2 = 2
 
 td = 0.000001
+decay = 0.99
 
 
 
@@ -77,6 +83,7 @@ class PIDController:
 
     def compute(self, setpoint, actual_position):
         error = setpoint - actual_position
+	self.integral *= decay
         self.integral += error * self.dt
         derivative = (error - self.prev_error) / self.dt
 
@@ -94,7 +101,7 @@ class PIDController:
             output = min(max_out, output)
 
         self.prev_error = error
-        return output
+        return output, derivative
 
 class Sensor:
     def __init__(self, name, mac):
@@ -214,9 +221,42 @@ states = []
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
 
-pid = PIDController(Kp=1.25, Ki=1, Kd=0.05, dt=0.1, output_limits=(-90,90))  # Adjust gains as needed
+pid = PIDController(Kp=1.25, Ki=1, Kd=0.05, dt=td*5, output_limits=(-90,90))  # Adjust gains as needed
+pid.integral = load_integral
 
+def get_and_increment_trial_number():
+    filename = "trial_counter.json"
+    if os.path.exists(filename):
+        with open(filename, "r") as f:
+            data = json.load(f)
+    else:
+        data = {}
 
+    date_str = datetime.datetime.now().strftime("%m_%d_%Y")
+    trial_number = data.get(date_str, 1)
+
+    # Increment and save for next time
+    data[date_str] = trial_number + 1
+    with open(filename, "w") as f:
+        json.dump(data, f)
+
+    return date_str, trial_number
+
+def save_integral(integral):
+    with open("pid_integral.json", "w") as f:
+        json.dump({"integral": integral}, f)
+
+def load_integral():
+    try:
+        with open("pid_integral.json", "r") as f:
+            return json.load(f).get("integral", 0.0)
+    except FileNotFoundError:
+        return 0.0
+
+def save_sensor_data_log(log_data, date_str, trial_number):
+    df = pd.DataFrame(log_data)
+    filename = f"{date_str}_Trial_{trial_number}.xlsx"
+    df.to_excel(filename, index=False)
 
 def send_mit_control(bus, controller_id, position, velocity, kp, kd, torque):
         """
@@ -486,13 +526,14 @@ def main():
     time.sleep(1)
     set_servo_origin(bus, 2)
     time.sleep(.01)
-    
+    sensor_data_log = []
+    log_data = []
     print("Press 'q' to stop streaming and disconnect sensors")
 
     while True:
         if len(sensors) != len(states):
             break
-            
+        print(time.time())    
         # Import Current Data
         upperArm = states[1]
         lowerArm = states[0]         
@@ -552,7 +593,7 @@ def main():
         desired_position = elbowAngle
         actual_position = (-mtr2anglexo + lowerYawexo) * (180/math.pi)
         
-        correction = pid.compute(desired_position, actual_position)
+        correction, derivative = pid.compute(desired_position, actual_position)
         SetServo(correction + actual_position)
          
         
@@ -595,14 +636,33 @@ def main():
         
         plt.draw()
         plt.pause(td)
-        
-        
+        error = desired_position - actual_position
+        sensor_data_log.append({
+    	    "timestamp": time.time(),
+    	    "error": error,
+    	    "exo elbow": actual_position,
+    	    "healthy elbow": desired_position,
+    	    "healthy shoulder yaw": mtr2angl,
+	    "healthy shoulder pitch": mtr1angl,
+	    "exo shoulder yaw": mtr2anglexo,
+	    "exo shoulder pitch": mtr1anglexo,
+	})
+
+	log_data.append({
+    	    "error": error,
+	    "derivative": derivative,
+	    "integral": pid.integral,
+	    "Kp": pid.kp,
+	    "Ki": pid.ki,
+	    "Kd": pid.kd,
+	})
         
         if keyboard.is_pressed('q'):
             print('Stopping streaming and disconnecting sensors')
             #print(upperArm.data)
             break
         sleep(td)
+	print(time.time())
 
     for state in states:
         stop_and_disconnect(state)
@@ -619,6 +679,23 @@ def main():
     SetServo(0)
     
     sock.close()
+
+    print("Saving integral and data...")
+
+    df = pd.DataFrame(log_data)
+	
+    # Save PID integral
+    save_integral(pid.integral)
+
+    # Get current date and trial number
+    date_str, trial_number = get_and_increment_trial_number()
+
+    # Save sensor readings
+    save_sensor_data_log(sensor_data_log, date_str, trial_number)
+    filename = f"system_data_Trial_{trial_number}.csv"
+    df.to_csv(filename, index=False)
+	
+    print(f"Trial saved as: {date_str}_Trial_{trial_number}.xlsx")
     plt.ioff()
     plt.show()
 
