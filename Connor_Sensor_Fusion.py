@@ -73,17 +73,18 @@ class PIDController:
         self.Kd = Kd
         self.dt = dt  # Time step
 
-        self.integral = 0
-        self.prev_error = 0
+        self.integral = 0.00
+        self.prev_error = 0.00
+        self.decay = 0.99
         self.output_limits = output_limits  # (min_output, max_output)
 
     def reset(self):
-        self.integral = 0
-        self.prev_error = 0
+        self.integral = 0.00
+        self.prev_error = 0.00
 
     def compute(self, setpoint, actual_position):
         error = setpoint - actual_position
-	self.integral *= decay
+        self.integral = self.integral * self.decay
         self.integral += error * self.dt
         derivative = (error - self.prev_error) / self.dt
 
@@ -222,7 +223,7 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
 
 pid = PIDController(Kp=1.25, Ki=1, Kd=0.05, dt=td*5, output_limits=(-90,90))  # Adjust gains as needed
-pid.integral = load_integral
+
 
 def get_and_increment_trial_number():
     filename = "trial_counter.json"
@@ -501,6 +502,7 @@ def main():
     #time.sleep(1)
 	
     SetServo(0)
+    pid.integral = load_integral
     
     #states = []
     
@@ -643,26 +645,26 @@ def main():
     	    "exo elbow": actual_position,
     	    "healthy elbow": desired_position,
     	    "healthy shoulder yaw": mtr2angl,
-	    "healthy shoulder pitch": mtr1angl,
-	    "exo shoulder yaw": mtr2anglexo,
-	    "exo shoulder pitch": mtr1anglexo,
-	})
+            "healthy shoulder pitch": mtr1angl,
+            "exo shoulder yaw": mtr2anglexo,
+            "exo shoulder pitch": mtr1anglexo
+        })
 
-	log_data.append({
+        log_data.append({
     	    "error": error,
-	    "derivative": derivative,
-	    "integral": pid.integral,
-	    "Kp": pid.kp,
-	    "Ki": pid.ki,
-	    "Kd": pid.kd,
-	})
+            "derivative": derivative,
+            "integral": pid.integral,
+            "Kp": pid.kp,
+            "Ki": pid.ki,
+            "Kd": pid.kd
+        })
         
         if keyboard.is_pressed('q'):
             print('Stopping streaming and disconnecting sensors')
             #print(upperArm.data)
             break
         sleep(td)
-	print(time.time())
+        print(time.time())
 
     for state in states:
         stop_and_disconnect(state)
